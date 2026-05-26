@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blood Cell Analysis — QNN Classifier</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #f5f7fa;
+      --card:     #ffffff;
+      --border:   #e2e8f0;
+      --text:     #1e293b;
+      --muted:    #64748b;
+      --accent:   #3b82f6;
+      --accent-h: #2563eb;
+      --wbc:      #ef4444;
+      --plt:      #3b82f6;
+      --rbc:      #22c55e;
+      --chip-bg:  #f1f5f9;
+      --radius:   12px;
+      --shadow:   0 1px 3px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.06);
+    }
+    body {
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ────────────────────────────────────────────── */
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header .logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-size: 18px;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header p  { font-size: 13px; color: var(--muted); }
+    header { justify-content: space-between; }
+    .api-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--chip-bg);
+      cursor: pointer;
+      transition: background .2s;
+      white-space: nowrap;
+    }
+    .api-status:hover { background: #e2e8f0; }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-dot.checking { background: #94a3b8; animation: pulse-gray .8s infinite; }
+    .status-dot.online   { background: #22c55e; animation: pulse-green 2s infinite; }
+    .status-dot.offline  { background: #ef4444; }
+    @keyframes pulse-gray  { 0%,100%{opacity:1} 50%{opacity:.4} }
+    @keyframes pulse-green { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+    /* Tooltip models */
+    .api-tooltip {
+      position: fixed;
+      top: 58px; right: 20px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      padding: 14px 16px;
+      min-width: 220px;
+      font-size: 13px;
+      z-index: 100;
+      display: none;
+    }
+    .api-tooltip.show { display: block; }
+    .api-tooltip .tip-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 0;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+    .api-tooltip .tip-row:last-child { border-bottom: none; }
+    .tip-label { color: var(--muted); }
+    .tip-ok   { color: #16a34a; font-weight: 600; }
+    .tip-warn { color: #d97706; font-weight: 600; }
+    .tip-err  { color: #dc2626; font-weight: 600; }
+
+    /* ── Layout ────────────────────────────────────────────── */
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 780px) {
+      main { grid-template-columns: 1fr; }
+    }
+
+    /* ── Card ───────────────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── Upload Zone ────────────────────────────────────────── */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: #eff6ff;
+    }
+    .upload-zone input[type=file] {
+      position: absolute; inset: 0;
+      opacity: 0; cursor: pointer;
+    }
+    .upload-icon { font-size: 36px; margin-bottom: 10px; }
+    .upload-zone p { font-size: 14px; color: var(--muted); }
+    .upload-zone strong { color: var(--accent); }
+    #preview-img {
+      max-width: 100%; max-height: 200px;
+      border-radius: 8px;
+      margin-top: 14px;
+      display: none;
+      object-fit: contain;
+    }
+
+    /* ── Qubit Toggle ───────────────────────────────────────── */
+    .qubit-toggle {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 16px;
+    }
+    .qubit-toggle label {
+      flex: 1;
+      text-align: center;
+      padding: 9px 0;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+      color: var(--muted);
+    }
+    .qubit-toggle input[type=radio] { display: none; }
+    .qubit-toggle input:checked + label {
+      background: var(--accent);
+      color: white;
+    }
+
+    /* ── Button ─────────────────────────────────────────────── */
+    #btn-analyze {
+      margin-top: 18px;
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background: var(--accent);
+      color: white;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s, transform .1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    #btn-analyze:hover:not(:disabled) { background: var(--accent-h); }
+    #btn-analyze:active:not(:disabled) { transform: scale(.98); }
+    #btn-analyze:disabled { opacity: .55; cursor: not-allowed; }
+
+    /* ── WBC Crops Grid ─────────────────────────────────────── */
+    #wbc-crops-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .wbc-crop-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .wbc-crop-item img {
+      width: 160px;
+      height: 160px;
+      object-fit: cover;
+      border-radius: 10px;
+      border: 2px solid #fca5a5;
+    }
+    .wbc-crop-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--wbc);
+    }
+    .wbc-crops-empty {
+      font-size: 13px;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    /* ── No-CUDA warning banner ─────────────────────────────── */
+    .banner-warn {
+      background: #fffbeb;
+      border: 1px solid #fbbf24;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #92400e;
+      margin-bottom: 16px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .banner-warn b { color: #78350f; }
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2.5px solid rgba(255,255,255,.4);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Status bar ──────────────────────────────────────────── */
+    #status-bar {
+      margin-top: 14px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+    #status-bar.info  { background: #eff6ff; color: #1d4ed8; }
+    #status-bar.error { background: #fef2f2; color: #dc2626; }
+    #status-bar.ok    { background: #f0fdf4; color: #16a34a; }
+
+    /* ── Results panel ───────────────────────────────────────── */
+    #results { display: none; }
+
+    /* Class Tiles */
+    .cell-tiles {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .cell-tile {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      text-align: center;
+      background: var(--card);
+    }
+    .cell-tile .tile-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 10px;
+    }
+    .cell-tile.wbc .tile-label { color: var(--wbc); }
+    .cell-tile.plt .tile-label { color: var(--plt); }
+    .cell-tile.rbc .tile-label { color: var(--rbc); }
+    .cell-tile img {
+      width: 100%;
+      max-width: 120px;
+      height: 110px;
+      object-fit: cover;
+      border-radius: 8px;
+      display: block;
+      margin: 0 auto 8px;
+      border: 1px solid var(--border);
+    }
+    .tile-placeholder {
+      width: 100%;
+      max-width: 120px;
+      height: 110px;
+      border-radius: 8px;
+      background: var(--chip-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 8px;
+      color: var(--muted);
+      font-size: 24px;
+    }
+    .tile-count {
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .cell-tile.wbc .tile-count { color: var(--wbc); }
+    .cell-tile.plt .tile-count { color: var(--plt); }
+    .cell-tile.rbc .tile-count { color: var(--rbc); }
+    .tile-name { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* Annotated image */
+    #annotated-wrap {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    #annotated-wrap img {
+      max-width: 100%;
+      max-height: 420px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      object-fit: contain;
+    }
+
+    /* WBC detections table */
+    .wbc-list { margin-top: 6px; }
+    .wbc-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-bottom: 8px;
+      background: var(--card);
+    }
+    .wbc-id {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: #fef2f2;
+      color: var(--wbc);
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .wbc-class-tag {
+      background: var(--wbc);
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .wbc-full-name {
+      font-size: 13px;
+      color: var(--text);
+      flex: 1;
+    }
+    .conf-bar-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 120px;
+    }
+    .conf-bar {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      flex: 1;
+      overflow: hidden;
+    }
+    .conf-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, #f97316, #ef4444);
+      transition: width .4s ease;
+    }
+    .conf-pct {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* Summary chips */
+    .summary-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+    .chip {
+      background: var(--chip-bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 5px 12px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .chip b { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <div class="logo">🔬</div>
+    <div>
+      <h1>Blood Cell Analysis</h1>
+      <p>YOLOv13 Detection + Hybrid CNN–QNN Classification</p>
+    </div>
+  </div>
+  <!-- API Status Badge -->
+  <div class="api-status" id="api-status-badge" onclick="toggleTooltip()">
+    <div class="status-dot checking" id="status-dot"></div>
+    <span id="status-label">Đang kết nối...</span>
+  </div>
+</header>
+
+<!-- Tooltip chi tiết -->
+<div class="api-tooltip" id="api-tooltip">
+  <div style="font-weight:600;margin-bottom:8px;font-size:13px;">📡 Trạng thái API</div>
+  <div class="tip-row"><span class="tip-label">Server</span>     <span id="tip-server">—</span></div>
+  <div class="tip-row"><span class="tip-label">Device</span>     <span id="tip-device">—</span></div>
+  <div class="tip-row"><span class="tip-label">YOLO model</span> <span id="tip-yolo">—</span></div>
+  <div class="tip-row"><span class="tip-label">QNN 4-qubit</span><span id="tip-qnn4">—</span></div>
+  <div class="tip-row"><span class="tip-label">QNN 8-qubit</span><span id="tip-qnn8">—</span></div>
+  <div class="tip-row"><span class="tip-label">4Q Focal Loss</span><span id="tip-focal4">—</span></div>
+  <div class="tip-row"><span class="tip-label">8Q Focal Loss</span><span id="tip-focal8">—</span></div>
+  <div class="tip-row"><span class="tip-label">Quantum lib</span><span id="tip-qlib">—</span></div>
+  <div style="margin-top:10px;text-align:right;">
+    <span style="font-size:11px;color:var(--muted);cursor:pointer;" onclick="checkHealth()">🔄 Refresh</span>
+  </div>
+</div>
+
+<main>
+  <!-- ── LEFT PANEL: Upload & Controls ─────────────────────── -->
+  <aside>
+    <div class="card">
+      <div class="card-title">📤 Input</div>
+
+      <!-- Upload zone -->
+      <div class="upload-zone" id="drop-zone">
+        <input type="file" id="img-input" accept="image/*" />
+        <div class="upload-icon">🩸</div>
+        <p><strong>Chọn ảnh</strong> hoặc kéo thả vào đây</p>
+        <p style="font-size:12px;margin-top:4px;">PNG · JPG · WEBP</p>
+        <img id="preview-img" alt="preview" />
+      </div>
+
+      <!-- Qubit selector -->
+      <div style="margin-top:20px;">
+        <div class="card-title" style="margin-bottom:8px;">⚛️ Chế độ QNN</div>
+        <div class="qubit-toggle">
+          <input type="radio" name="qubit" id="q4" value="4" checked />
+          <label for="q4">4 Qubit</label>
+          <input type="radio" name="qubit" id="q8" value="8" />
+          <label for="q8">8 Qubit</label>
+          <input type="radio" name="qubit" id="qfocal4" value="focal4" />
+          <label for="qfocal4">4Q + Focal</label>
+          <input type="radio" name="qubit" id="qfocal8" value="focal8" />
+          <label for="qfocal8">8Q + Focal</label>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-top:8px;">
+          Model QNN với <span id="qubit-desc">4 qubits — kiến trúc nhẹ hơn</span>
+        </p>
+      </div>
+
+      <!-- Analyze button -->
+      <button id="btn-analyze" disabled>
+        <div class="spinner" id="spin"></div>
+        <span id="btn-text">🔍 Phân tích</span>
+      </button>
+
+      <div id="status-bar"></div>
+    </div>
+
+    <!-- Info box -->
+    <div class="card" style="margin-top:16px;">
+      <div class="card-title">📋 Pipeline</div>
+      <ol style="font-size:13px;color:var(--muted);padding-left:18px;line-height:1.9;">
+        <li>YOLOv13 phát hiện <b style="color:#ef4444">WBC</b>, <b style="color:#3b82f6">PLT</b>, <b style="color:#22c55e">RBC</b></li>
+        <li>Cắt ảnh từng lớp, đếm số lượng</li>
+        <li>CNN + QNN phân loại chi tiết <b>12 loại WBC</b></li>
+        <li>Hiển thị bbox + nhãn phân loại</li>
+      </ol>
+      <div style="margin-top:14px;font-size:12px;color:var(--muted);border-top:1px solid var(--border);padding-top:12px;">
+        <b>12 lớp WBC:</b> BA · BNE · EO · ERB · LY · MMY · MO · MY · MYO · PLT · PMY · SNE
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── RIGHT PANEL: Results ───────────────────────────────── -->
+  <section>
+    <!-- Banner lỗi QNN (chỉ hiện khi model không load được) -->
+    <div class="banner-warn" id="no-cuda-banner" style="display:none;">
+      ⚠️ <span><b>QNN model không load được</b> — Kiểm tra lại file
+      <code>best_hybrid_4qubits.pth</code> / <code>best_hybrid_8qubits.pth</code>
+      và <code>quantum_circuit_simulator.cpython-312.pyc</code> trong thư mục <code>models/</code>.</span>
+    </div>
+
+    <!-- Placeholder khi chưa có kết quả -->
+    <div id="placeholder" class="card" style="text-align:center;padding:60px 20px;">
+      <div style="font-size:56px;margin-bottom:16px;">🔬</div>
+      <p style="color:var(--muted);font-size:15px;">Upload ảnh tiêu bản máu và nhấn <b>Phân tích</b> để bắt đầu</p>
+    </div>
+
+    <!-- Kết quả -->
+    <div id="results">
+
+      <!-- Summary chips -->
+      <div class="summary-row" id="summary-chips"></div>
+
+      <!-- 3 class tiles -->
+      <div class="cell-tiles">
+        <div class="cell-tile wbc">
+          <div class="tile-label">WBC</div>
+          <div id="wbc-img-wrap"><div class="tile-placeholder">🔴</div></div>
+          <div class="tile-count" id="cnt-wbc">0</div>
+          <div class="tile-name">White Blood Cells</div>
+        </div>
+        <div class="cell-tile plt">
+          <div class="tile-label">PLT</div>
+          <div id="plt-img-wrap"><div class="tile-placeholder">🔵</div></div>
+          <div class="tile-count" id="cnt-plt">0</div>
+          <div class="tile-name">Platelets</div>
+        </div>
+        <div class="cell-tile rbc">
+          <div class="tile-label">RBC</div>
+          <div id="rbc-img-wrap"><div class="tile-placeholder">🟢</div></div>
+          <div class="tile-count" id="cnt-rbc">0</div>
+          <div class="tile-name">Red Blood Cells</div>
+        </div>
+      </div>
+
+      <!-- WBC Annotated Crops -->
+      <div class="card" style="margin-bottom:20px;" id="wbc-crops-card">
+        <div class="card-title">🔬 WBC — Kết quả phân loại QNN</div>
+        <div id="wbc-crops-grid"></div>
+      </div>
+
+      <!-- WBC detections -->
+      <div class="card">
+        <div class="card-title" id="wbc-title">🩸 WBC Detections</div>
+        <div class="wbc-list" id="wbc-list"></div>
+      </div>
+
+    </div>
+  </section>
+</main>
+
+<script>
+const imgInput   = document.getElementById('img-input');
+const dropZone   = document.getElementById('drop-zone');
+const previewImg = document.getElementById('preview-img');
+const btnAnalyze = document.getElementById('btn-analyze');
+const btnText    = document.getElementById('btn-text');
+const spin       = document.getElementById('spin');
+const statusBar  = document.getElementById('status-bar');
+const results    = document.getElementById('results');
+const placeholder = document.getElementById('placeholder');
+const qubitDesc  = document.getElementById('qubit-desc');
+
+let selectedFile = null;
+
+// ── Qubit description ──────────────────────────────────────
+document.querySelectorAll('input[name="qubit"]').forEach(r => {
+  r.addEventListener('change', () => {
+    const desc = {
+      '4':      '4 qubits — kiến trúc nhẹ, CrossEntropy loss',
+      '8':      '8 qubits — biểu diễn lượng tử phong phú hơn',
+      'focal4': '4 qubits — Focal Loss, xử lý mất cân bằng dữ liệu tốt hơn',
+      'focal8': '8 qubits — Focal Loss, kết hợp ưu điểm cả hai',
+    };
+    qubitDesc.textContent = desc[r.value] || '';
+  });
+});
+
+// ── File input ────────────────────────────────────────────
+imgInput.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) loadFile(f);
+});
+
+// ── Drag & drop ───────────────────────────────────────────
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) loadFile(f);
+});
+
+function loadFile(file) {
+  selectedFile = file;
+  const url = URL.createObjectURL(file);
+  previewImg.src = url;
+  previewImg.style.display = 'block';
+  btnAnalyze.disabled = false;
+  clearStatus();
+}
+
+// ── Analyze ───────────────────────────────────────────────
+btnAnalyze.addEventListener('click', async () => {
+  if (!selectedFile) return;
+
+  const qubit = document.querySelector('input[name="qubit"]:checked').value;
+
+  setBusy(true);
+  setStatus('Đang xử lý... (QNN inference có thể mất vài giây)', 'info');
+
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+  fd.append('qubit_mode', qubit);
+
+  try {
+    const res  = await fetch('/api/analyze', { method: 'POST', body: fd });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.detail || 'Lỗi server');
+    if (!data.success) throw new Error('Phân tích thất bại');
+
+    renderResults(data);
+    const dev = data.qnn_available ? `QNN ${qubit} qubit` : 'QNN load lỗi';
+    setStatus(`✅ Hoàn thành — ${data.total_cells} tế bào, ${dev}`, 'ok');
+  } catch (err) {
+    setStatus('❌ ' + err.message, 'error');
+    console.error(err);
+  } finally {
+    setBusy(false);
+  }
+});
+
+// ── Render results ────────────────────────────────────────
+function renderResults(data) {
+  placeholder.style.display = 'none';
+  results.style.display     = 'block';
+
+  // Banner cảnh báo không có CUDA
+  document.getElementById('no-cuda-banner').style.display =
+    data.qnn_available ? 'none' : 'flex';
+
+  // Counts
+  document.getElementById('cnt-wbc').textContent = data.counts.WBC;
+  document.getElementById('cnt-plt').textContent = data.counts.PLT;
+  document.getElementById('cnt-rbc').textContent = data.counts.RBC;
+
+  // Sample images
+  renderSampleImg('wbc-img-wrap', data.sample_images.WBC, '🔴');
+  renderSampleImg('plt-img-wrap', data.sample_images.PLT, '🔵');
+  renderSampleImg('rbc-img-wrap', data.sample_images.RBC, '🟢');
+
+  // WBC Annotated Crops
+  renderWbcCrops(data.wbc_annotated_crops || [], data.wbc_detections || []);
+
+  // Summary chips
+  const chips = document.getElementById('summary-chips');
+  const modeLabel = { '4': 'QNN 4 Qubit', '8': 'QNN 8 Qubit', 'focal4': 'QNN 4Q + Focal Loss', 'focal8': 'QNN 8Q + Focal Loss' };
+  const qnnBadge = data.qnn_available
+    ? `<span class="chip">Model: <b>${modeLabel[data.qubit_mode] || data.qubit_mode} ✅</b></span>`
+    : `<span class="chip" style="border-color:#fbbf24;color:#92400e;">QNN: <b>N/A (CPU only)</b></span>`;
+  chips.innerHTML = `
+    <span class="chip">Tổng: <b>${data.total_cells}</b> tế bào</span>
+    ${qnnBadge}
+    <span class="chip">WBC: <b>${data.counts.WBC}</b></span>
+    <span class="chip">PLT: <b>${data.counts.PLT}</b></span>
+    <span class="chip">RBC: <b>${data.counts.RBC}</b></span>
+  `;
+
+  // WBC detections list
+  const list  = document.getElementById('wbc-list');
+  const title = document.getElementById('wbc-title');
+  title.textContent = `🩸 WBC Detections (${data.wbc_detections.length})`;
+  list.innerHTML = '';
+
+  if (data.wbc_detections.length === 0) {
+    list.innerHTML = '<p style="color:var(--muted);font-size:13px;">Không phát hiện WBC trong ảnh.</p>';
+    return;
+  }
+
+  data.wbc_detections.forEach(w => {
+    const item = document.createElement('div');
+    item.className = 'wbc-item';
+    if (w.qnn_ok) {
+      const confPct = Math.round(w.confidence * 100);
+      item.innerHTML = `
+        <div class="wbc-id">#${w.id}</div>
+        <span class="wbc-class-tag">${w.class}</span>
+        <span class="wbc-full-name">${w.full_name}</span>
+        <div class="conf-bar-wrap">
+          <div class="conf-bar">
+            <div class="conf-bar-fill" style="width:${confPct}%"></div>
+          </div>
+          <span class="conf-pct">${confPct}%</span>
+        </div>
+      `;
+    } else {
+      item.innerHTML = `
+        <div class="wbc-id">#${w.id}</div>
+        <span style="font-size:12px;background:#f1f5f9;padding:2px 8px;border-radius:4px;color:#64748b;font-weight:600;">WBC</span>
+        <span class="wbc-full-name" style="color:var(--muted);font-style:italic;">${w.full_name}</span>
+      `;
+    }
+    list.appendChild(item);
+  });
+}
+
+function renderWbcCrops(crops, detections) {
+  const grid = document.getElementById('wbc-crops-grid');
+  grid.innerHTML = '';
+  if (!crops || crops.length === 0) {
+    grid.innerHTML = '<p class="wbc-crops-empty">Không phát hiện WBC nào trong ảnh.</p>';
+    return;
+  }
+  crops.forEach((b64, i) => {
+    const det = detections[i] || {};
+    const label = det.qnn_ok
+      ? `#${det.id} ${det.class} — ${Math.round(det.confidence*100)}%`
+      : `#${(det.id||i+1)} WBC`;
+    const div = document.createElement('div');
+    div.className = 'wbc-crop-item';
+    div.innerHTML = `
+      <img src="data:image/jpeg;base64,${b64}" alt="WBC crop" />
+      <span class="wbc-crop-label">${label}</span>
+    `;
+    grid.appendChild(div);
+  });
+}
+
+function renderSampleImg(wrapId, b64, placeholder) {
+  const wrap = document.getElementById(wrapId);
+  if (b64) {
+    wrap.innerHTML = `<img src="data:image/jpeg;base64,${b64}" alt="crop" />`;
+  } else {
+    wrap.innerHTML = `<div class="tile-placeholder">${placeholder}</div>`;
+  }
+}
+
+// ── UI helpers ────────────────────────────────────────────
+function setBusy(busy) {
+  btnAnalyze.disabled = busy || !apiOnline;
+  spin.style.display  = busy ? 'block' : 'none';
+  btnText.textContent = busy ? 'Đang phân tích...' : '🔍 Phân tích';
+}
+function setStatus(msg, type) {
+  statusBar.textContent    = msg;
+  statusBar.className      = type;
+  statusBar.style.display  = 'block';
+}
+function clearStatus() {
+  statusBar.style.display = 'none';
+}
+
+// ── API Health Check ──────────────────────────────────────
+let apiOnline = false;
+let tooltipOpen = false;
+
+async function checkHealth() {
+  const dot   = document.getElementById('status-dot');
+  const label = document.getElementById('status-label');
+  dot.className   = 'status-dot checking';
+  label.textContent = 'Đang kết nối...';
+
+  try {
+    const res  = await fetch('/health', { signal: AbortSignal.timeout(4000) });
+    const data = await res.json();
+    apiOnline = data.status === 'ok';
+
+    dot.className   = 'status-dot online';
+    label.textContent = 'API Online';
+
+    // Update tooltip details
+    const ok  = v => `<span class="tip-ok">✓ ${v}</span>`;
+    const err = v => `<span class="tip-err">✗ ${v}</span>`;
+    const warn = v => `<span class="tip-warn">⚠ ${v}</span>`;
+
+    document.getElementById('tip-server').innerHTML = ok('Running');
+    document.getElementById('tip-device').innerHTML =
+      data.cuda
+        ? ok('GPU (CUDA)')
+        : warn('CPU only');
+    document.getElementById('tip-yolo').innerHTML = data.yolo_ready ? ok('Ready') : err('Không tìm thấy');
+    document.getElementById('tip-qnn4').innerHTML = data.qnn4_ready ? ok('Ready') : err('Không tìm thấy');
+    document.getElementById('tip-qnn8').innerHTML = data.qnn8_ready ? ok('Ready') : err('Không tìm thấy');
+    document.getElementById('tip-qlib').innerHTML = data.quantum_lib ? ok('Ready') : err('Không tìm thấy');
+    // Focal model - chỉ show nếu tồn tại field
+    const tipFocal = document.getElementById('tip-focal4');
+    if (tipFocal) {
+      tipFocal.innerHTML = data.qnn_focal4_ready ? ok('Ready') : err('Không tìm thấy');
+    }
+
+    // Bật nút analyze nếu có ảnh
+    if (selectedFile) btnAnalyze.disabled = false;
+
+  } catch (e) {
+    apiOnline = false;
+    dot.className   = 'status-dot offline';
+    label.textContent = 'Mất kết nối';
+    document.getElementById('tip-server').innerHTML = `<span class="tip-err">✗ Offline</span>`;
+    btnAnalyze.disabled = true;
+  }
+}
+
+function toggleTooltip() {
+  const tip = document.getElementById('api-tooltip');
+  tooltipOpen = !tooltipOpen;
+  tip.classList.toggle('show', tooltipOpen);
+}
+
+// Đóng tooltip khi click ra ngoài
+document.addEventListener('click', e => {
+  if (!e.target.closest('#api-status-badge') && !e.target.closest('#api-tooltip')) {
+    document.getElementById('api-tooltip').classList.remove('show');
+    tooltipOpen = false;
+  }
+});
+
+// Kiểm tra khi load trang, sau đó mỗi 15 giây
+checkHealth();
+setInterval(checkHealth, 15000);
+</script>
+</body>
+</html>
