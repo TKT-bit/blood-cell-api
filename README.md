@@ -16,8 +16,8 @@ blood_cell_api/
 │   ├── YOLO3class.pt
 │   ├── best_hybrid_4qubits.pth
 │   ├── best_hybrid_8qubits.pth
-│   ├──
-│   ├── 
+│   ├── best_hybrid_clean_done.pth
+│   ├── final_hybrid_clean.pth
 │   └── quantum_circuit_simulator.cpython.pyc
 └── README.md
 ```
